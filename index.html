@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rewards App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .profile-card {
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            font-weight: bold;
+            color: white;
+        }
+
+        .profile-info h2 {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .user-id {
+            font-size: 12px;
+            opacity: 0.6;
+        }
+
+        .balance-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            color: white;
+            margin-bottom: 16px;
+        }
+
+        .balance-label {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 8px;
+        }
+
+        .balance-amount {
+            font-size: 48px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .star-icon {
+            font-size: 40px;
+        }
+
+        .watch-ad-btn {
+            width: 100%;
+            padding: 16px;
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .watch-ad-btn:hover {
+            opacity: 0.9;
+        }
+
+        .watch-ad-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 18px;
+        }
+
+        .error {
+            background: #ff4444;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .stat-item {
+            background: var(--tg-theme-bg-color, #ffffff);
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="loading" class="loading">Загрузка...</div>
+        <div id="error" class="error"></div>
+        
+        <div id="app" style="display: none;">
+            <div class="profile-card">
+                <div class="profile-header">
+                    <div class="avatar" id="avatar">U</div>
+                    <div class="profile-info">
+                        <h2 id="userName">Пользователь</h2>
+                        <div class="user-id">ID: <span id="userId"></span></div>
+                    </div>
+                </div>
+
+                <div class="balance-section">
+                    <div class="balance-label">Ваш баланс</div>
+                    <div class="balance-amount">
+                        <span id="balance">0</span>
+                        <span class="star-icon">⭐</span>
+                    </div>
+                </div>
+
+                <button id="watchAdBtn" class="watch-ad-btn">
+                    <span>📺</span>
+                    Смотреть рекламу (+1 ⭐)
+                </button>
+
+                <div class="stats">
+                    <div class="stat-item">
+                        <div class="stat-value" id="adsWatched">0</div>
+                        <div class="stat-label">Реклам просмотрено</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="totalEarned">0</div>
+                        <div class="stat-label">Всего заработано</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Используйте переменную окружения для API URL или localhost по умолчанию
+        const API_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:3000/api'
+            : '/api';
+        
+        let tg = window.Telegram.WebApp;
+        let user = null;
+        let AdSonarSDK = null;
+
+        // Инициализация Telegram WebApp
+        tg.ready();
+        tg.expand();
+
+        // Функция для показа ошибок
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = message;
+            errorEl.classList.add('show');
+            setTimeout(() => {
+                errorEl.classList.remove('show');
+            }, 5000);
+        }
+
+        // Загрузка профиля пользователя
+        async function loadProfile() {
+            try {
+                const telegramUser = tg.initDataUnsafe?.user;
+                
+                // Для тестирования используем моковые данные, если нет Telegram
+                const userId = telegramUser?.id || 123456789;
+                const firstName = telegramUser?.first_name || 'Тестовый';
+                const lastName = telegramUser?.last_name || 'Пользователь';
+
+                const response = await fetch(`${API_URL}/profile`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        telegram_id: userId,
+                        first_name: firstName,
+                        last_name: lastName
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Ошибка загрузки профиля');
+                }
+
+                user = await response.json();
+                displayProfile(user);
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('app').style.display = 'block';
+
+                // Инициализация AdSonar
+                initAdSonar();
+            } catch (error) {
+                console.error('Error loading profile:', error);
+                showError('Ошибка загрузки профиля');
+                document.getElementById('loading').textContent = 'Ошибка загрузки';
+            }
+        }
+
+        // Отображение профиля
+        function displayProfile(userData) {
+            const fullName = `${userData.first_name} ${userData.last_name || ''}`.trim();
+            document.getElementById('userName').textContent = fullName;
+            document.getElementById('userId').textContent = userData.telegram_id;
+            document.getElementById('balance').textContent = userData.balance;
+            document.getElementById('adsWatched').textContent = userData.ads_watched;
+            document.getElementById('totalEarned').textContent = userData.balance;
+            
+            // Аватар с первой буквой имени
+            const firstLetter = userData.first_name.charAt(0).toUpperCase();
+            document.getElementById('avatar').textContent = firstLetter;
+        }
+
+        // Инициализация AdSonar
+        function initAdSonar() {
+            // ВАЖНО: Замените на ваш реальный Block ID из AdSonar панели
+            const ADSONAR_BLOCK_ID = 'YOUR_ADSONAR_BLOCK_ID';
+            
+            try {
+                // Инициализация AdSonar SDK
+                if (window.AdController) {
+                    AdSonarSDK = window.AdController;
+                    console.log('AdSonar SDK инициализирован');
+                } else {
+                    console.warn('AdSonar SDK не загружен');
+                }
+            } catch (error) {
+                console.error('Ошибка инициализации AdSonar:', error);
+            }
+        }
+
+        // Просмотр рекламы через AdSonar
+        async function watchAd() {
+            const btn = document.getElementById('watchAdBtn');
+            btn.disabled = true;
+            btn.textContent = 'Загрузка рекламы...';
+
+            try {
+                // ВАЖНО: Замените на ваш Block ID
+                const ADSONAR_BLOCK_ID = 'YOUR_ADSONAR_BLOCK_ID';
+
+                if (window.AdController) {
+                    // Показываем рекламу через AdSonar
+                    window.AdController.show({
+                        blockId: ADSONAR_BLOCK_ID,
+                        onReward: async () => {
+                            // Реклама успешно просмотрена
+                            await handleAdReward();
+                        },
+                        onClose: () => {
+                            // Реклама закрыта
+                            btn.disabled = false;
+                            btn.innerHTML = '<span>📺</span> Смотреть рекламу (+1 ⭐)';
+                }
+            } catch (error) {
+                console.error('Error watching ad:', error);
+                showError('Ошибка при просмотре рекламы');
+                btn.disabled = false;
+                btn.innerHTML = '<span>📺</span> Смотреть рекламу (+1 ⭐)';
+            }
+        }
+
+        // Обработка награды за рекламу
+        async function handleAdReward() {
+            try {
+                const response = await fetch(`${API_URL}/watch-ad`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        telegram_id: user.telegram_id
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Ошибка начисления награды');
+                }
+
+                const updatedUser = await response.json();
+                user = updatedUser;
+                displayProfile(user);
+                
+                // Показываем уведомление в Telegram
+                tg.showAlert('Поздравляем! Вы получили 1 ⭐');
+            } catch (error) {
+                console.error('Error handling ad reward:', error);
+                showError('Ошибка начисления награды');
+            }
+        }
+
+        // События
+        document.getElementById('watchAdBtn').addEventListener('click', watchAd);
+
+        // Загрузка AdSonar SDK
+        // ВАЖНО: Свяжитесь с @adsonar_manager в Telegram для получения SDK
+        const adsScript = document.createElement('script');
+        adsScript.src = 'https://ad.adsonar.co/sdk.js'; // Пример URL, уточните актуальный
+        adsScript.async = true;
+        adsScript.onerror = () => {
+            console.warn('AdSonar SDK не загружен, используется тестовый режим');
+        };
+        document.head.appendChild(adsScript);
+
+        // Инициализация приложения
+        loadProfile();
+    </script>
+</body>
+</html>
